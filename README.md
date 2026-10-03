@@ -4,7 +4,7 @@ A hands-on troubleshooting lab for WordPress support and operations roles. It bo
 real WordPress stack, breaks it the way production sites actually break, hands you the
 support ticket, and grades whether you fixed it — with a clear **PASS / FAIL**.
 
-[![Scenarios](https://github.com/ericakfranz/wp-fix-lab/actions/workflows/scenarios.yml/badge.svg)](https://github.com/ericakfranz/wp-fix-lab/actions/workflows/scenarios.yml)
+[![Scenarios](https://github.com/YOUR-GITHUB-USERNAME/wp-fix-lab/actions/workflows/scenarios.yml/badge.svg)](https://github.com/YOUR-GITHUB-USERNAME/wp-fix-lab/actions/workflows/scenarios.yml)
 
 ## Why it's not just a quiz
 
@@ -24,6 +24,13 @@ again**, not that you ran a particular command, so "fixing" a red herring still 
 ```
 
 **Locally:** you need Docker. Clone, then the same two commands. Site: http://localhost:8080 (`admin` / `admin`).
+
+> **Do you get `permission denied` when you run `./lab`?** This happens when the file
+> loses its "allowed to run" flag (common when files go up through the GitHub web page).
+> You have two choices. Easiest: put `bash` in front, like **`bash lab list`** or
+> **`bash lab start fatal`**. It works anywhere, with no setup. Or fix it once: run
+> `chmod +x lab`, and then `./lab` works normally. Everywhere below, `./lab …` and
+> `bash lab …` do the same thing.
 
 ## Two modes
 
