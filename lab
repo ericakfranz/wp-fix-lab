@@ -1,0 +1,244 @@
+#!/usr/bin/env bash
+# WP Fix Lab: break a real WordPress site in a realistic way, then prove you can fix it.
+#
+# Each error "type" is a generator, not a fixed puzzle. A seed picks one of several
+# root causes and a set of red herrings, so the same type gives a different problem
+# every run. The grader checks that the SITE actually works again, not that you ran
+# a particular command - so fixing a red herring doesn't count.
+set -euo pipefail
+
+# shellcheck source=lib/common.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/common.sh"
+
+usage() {
+  cat <<EOF
+WP Fix Lab
+
+Usage: ./lab <command>
+
+  list                       Show the error types you can be tested on
+  start <type> [options]     Reset the site, break it, show the ticket
+  check                      Grade your fix: PASS / FAIL
+  ticket                     Show the current ticket again
+  reset                      Rebuild a clean, working site
+  down                       Stop everything and delete the lab's data
+
+  start options:
+    --test                   Test mode: ticket + PASS/FAIL only. No hints, no
+                             runbook, no diagnosis questions. (Default is training.)
+    --seed <n>               Reproduce an exact scenario (same seed = same problem).
+
+Training-mode extras (not available with --test):
+  hint                       One more nudge each time you ask.
+  runbook                    Show the write-up for the current type.
+
+Tools while you work:
+  wp <args>                  Run WP-CLI (e.g. ./lab wp plugin list)
+  shell                      Open a shell in the PHP container
+  logs [service]             Container logs (wordpress, nginx, db)
+
+Site: $LAB_URL   (admin / admin)
+EOF
+}
+
+# ---- state -----------------------------------------------------------------
+state_get() { cat "$LAB_STATE/$1" 2>/dev/null || true; }
+current_type() {
+  local t; t="$(state_get type)"
+  [[ -n "$t" ]] || die "No scenario running. Try: ./lab list"
+  echo "$t"
+}
+type_file() {
+  local f="$LAB_ROOT/scenarios/$1/scenario.sh"
+  [[ -f "$f" ]] || die "Unknown type '$1'. Try: ./lab list"
+  echo "$f"
+}
+
+# Load a type's generator. Sets SCENARIO_TITLE, VARIANTS, and the
+# break/fix/check/ticket/hint/quiz functions for the active run.
+load_type() {
+  local type="$1"
+  VARIANTS=()
+  # shellcheck source=/dev/null
+  source "$(type_file "$type")"
+  [[ ${#VARIANTS[@]} -gt 0 ]] || die "Type '$type' defines no variants."
+}
+
+# ---- commands --------------------------------------------------------------
+cmd_list() {
+  local d type
+  for d in "$LAB_ROOT"/scenarios/*/; do
+    type="$(basename "$d")"
+    ( load_type "$type"; printf '  %-16s %-42s (%d variants)\n' "$type" "$SCENARIO_TITLE" "${#VARIANTS[@]}" )
+  done
+}
+
+cmd_reset() {
+  echo "Building a clean site..."
+  compose --profile tools down -v --remove-orphans >/dev/null 2>&1 || true
+  find "$LAB_ROOT/nginx/lab" -type f ! -name .gitkeep -delete
+  rm -rf "$LAB_STATE"; mkdir -p "$LAB_STATE"
+  compose up -d --wait >/dev/null
+
+  local i
+  for i in $(seq 1 60); do
+    in_php 'test -f /var/www/html/wp-config.php' 2>/dev/null && break
+    sleep 1
+    [[ $i -eq 60 ]] && die "WordPress files never appeared. Check: ./lab logs wordpress"
+  done
+
+  wp core install --url="$LAB_URL" --title="WP Fix Lab" \
+    --admin_user=admin --admin_password=admin --admin_email=admin@example.com \
+    --skip-email >/dev/null
+  wp rewrite structure '/%postname%/' >/dev/null
+  wp post generate --count=8 >/dev/null 2>&1 || true
+
+  [[ "$(http_code /)" == 200 ]] || die "Clean site isn't returning 200. Check: ./lab logs"
+}
+
+cmd_start() {
+  local type="" seed="" mode="training"
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --test)   mode="test" ;;
+      --seed)   seed="${2:-}"; shift ;;
+      --seed=*) seed="${1#--seed=}" ;;
+      --*)      die "Unknown option '$1'" ;;
+      *)        type="$1" ;;
+    esac
+    shift
+  done
+  [[ -n "$type" ]] || die "Usage: ./lab start <type> [--test] [--seed <n>]"
+  [[ -z "$seed" || "$seed" =~ ^[0-9]+$ ]] || die "--seed takes a number."
+  [[ -z "$seed" ]] && seed="$RANDOM$RANDOM"
+
+  export LAB_SEED="$seed" LAB_MODE="$mode"
+  load_type "$type"
+  local idx; idx=$(( seed % ${#VARIANTS[@]} ))
+  export LAB_VARIANT="${VARIANTS[$idx]}"
+
+  cmd_reset
+  echo "Breaking things..."
+  apply_break >/dev/null
+
+  printf '%s' "$type"        > "$LAB_STATE/type"
+  printf '%s' "$seed"        > "$LAB_STATE/seed"
+  printf '%s' "$mode"        > "$LAB_STATE/mode"
+  printf '%s' "$LAB_VARIANT" > "$LAB_STATE/variant"
+  date +%s > "$LAB_STATE/started_at"
+  echo 0  > "$LAB_STATE/hints_used"
+
+  echo
+  if [[ "$mode" == test ]]; then
+    printf '=== TEST MODE ===  type: %s   seed: %s\n\n' "$type" "$seed"
+  else
+    printf '=== TRAINING MODE ===  type: %s   seed: %s\n\n' "$type" "$seed"
+  fi
+  ticket
+  echo
+  echo "When you think it's fixed:  ./lab check"
+  if is_training; then echo "Stuck?  ./lab hint"; fi
+  return 0
+}
+
+# Re-establish the running scenario's env before calling into its functions.
+restore_run() {
+  local type; type="$(current_type)"
+  LAB_SEED="$(state_get seed)"; LAB_MODE="$(state_get mode)"; LAB_VARIANT="$(state_get variant)"
+  export LAB_SEED LAB_MODE LAB_VARIANT
+  load_type "$type"
+}
+
+cmd_ticket() { restore_run; ticket | sed 's/^/  /'; }
+
+cmd_hint() {
+  restore_run
+  is_training || die "Hints are off in test mode. Grade with: ./lab check"
+  local used total
+  used="$(state_get hints_used)"; total="$(hint_count)"
+  if (( used >= total )); then
+    echo "No more hints - you've seen all $total. The full write-up: ./lab runbook"
+    return 0
+  fi
+  hint "$(( used + 1 ))"
+  echo "$(( used + 1 ))" > "$LAB_STATE/hints_used"
+  echo
+  printf '(hint %d of %d)\n' "$(( used + 1 ))" "$total"
+}
+
+cmd_runbook() {
+  restore_run
+  is_training || die "Runbooks are off in test mode."
+  cat "$LAB_ROOT/scenarios/$(current_type)/RUNBOOK.md"
+}
+
+run_quiz() {
+  local line q="" answer reply wrong=0
+  echo; echo "Diagnosis questions (so a lucky fix doesn't pass as understanding):"
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    if [[ "$line" == "Q: "* ]]; then
+      q="${line#Q: }"; echo; echo "  $q"
+    elif [[ "$line" =~ ^[A-Z]\) ]]; then
+      echo "    $line"
+    elif [[ "$line" == ANSWER:* ]]; then
+      answer="${line#ANSWER: }"
+      read -r -p "  Your answer: " reply </dev/tty
+      if [[ "${reply^^}" == "$answer" ]]; then pass "correct"; else fail "not quite (answer: $answer)"; wrong=1; fi
+    fi
+  done < <(quiz)
+  return "$wrong"
+}
+
+cmd_check() {
+  restore_run
+  local type; type="$(current_type)"
+  echo "Grading '$type' (variant hidden, seed $(state_get seed))..."
+  echo
+  CHECK_FAILED=0
+  check
+  echo
+  if [[ "$CHECK_FAILED" -ne 0 ]]; then
+    printf '\033[31mFAIL\033[0m - not fixed yet.\n'
+    if is_training; then echo "Keep going. A nudge: ./lab hint"; fi
+    return 1
+  fi
+  printf '\033[32mPASS\033[0m - the site is healthy again.\n'
+
+  local result="pass"
+  if is_training && [[ -z "${LAB_NONINTERACTIVE:-}" ]]; then
+    run_quiz || result="pass (diagnosis incomplete)"
+    echo; echo "Full write-up for this type: ./lab runbook"
+  fi
+
+  local started elapsed; started="$(state_get started_at)"; elapsed=$(( $(date +%s) - started ))
+  printf '\nResult: %s in %dm %02ds  [mode: %s, seed: %s, hints: %s]\n' \
+    "$result" $((elapsed/60)) $((elapsed%60)) "$(state_get mode)" "$(state_get seed)" "$(state_get hints_used)"
+  printf '%s\t%s\t%s\t%s\t%ss\thints=%s\n' \
+    "$(date -u +%FT%TZ)" "$type" "$(state_get mode)" "$result" "$elapsed" "$(state_get hints_used)" \
+    >> "$LAB_ROOT/results.log"
+}
+
+# Apply the reference fix. Spoiler; used by CI to prove each scenario is fixable.
+cmd_solve() { restore_run; fix; }
+
+main() {
+  local cmd="${1:-help}"; shift || true
+  case "$cmd" in
+    list)    cmd_list ;;
+    start)   cmd_start "$@" ;;
+    check)   cmd_check ;;
+    ticket)  cmd_ticket ;;
+    hint)    cmd_hint ;;
+    runbook) cmd_runbook ;;
+    reset)   cmd_reset; rm -rf "$LAB_STATE" ;;
+    down)    compose --profile tools down -v --remove-orphans; rm -rf "$LAB_STATE" ;;
+    wp)      wp "$@" ;;
+    shell)   compose exec -u www-data wordpress bash ;;
+    logs)    compose logs --tail=100 "$@" ;;
+    _solve)  cmd_solve ;;
+    help|-h|--help) usage ;;
+    *) usage; exit 1 ;;
+  esac
+}
+
+main "$@"
