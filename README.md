@@ -4,7 +4,7 @@ A hands-on troubleshooting lab for WordPress support and operations roles. It bo
 real WordPress stack, breaks it the way production sites actually break, hands you the
 support ticket, and grades whether you fixed it — with a clear **PASS / FAIL**.
 
-[![Scenarios](https://github.com/YOUR-GITHUB-USERNAME/wp-fix-lab/actions/workflows/scenarios.yml/badge.svg)](https://github.com/YOUR-GITHUB-USERNAME/wp-fix-lab/actions/workflows/scenarios.yml)
+[![Scenarios](https://github.com/ericakfranz/wp-fix-lab/actions/workflows/scenarios.yml/badge.svg)](https://github.com/ericakfranz/wp-fix-lab/actions/workflows/scenarios.yml)
 
 ## Why it's not just a quiz
 
