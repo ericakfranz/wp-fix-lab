@@ -121,11 +121,25 @@ cmd_start() {
   done
   [[ -n "$type" ]] || die "Usage: $LAB_CMD start <type> [--test] [--seed <n>]"
   [[ -z "$seed" || "$seed" =~ ^[0-9]+$ ]] || die "--seed takes a number."
-  [[ -z "$seed" ]] && seed="$RANDOM$RANDOM"
 
-  export LAB_SEED="$seed" LAB_MODE="$mode"
   load_type "$type"
-  local idx; idx=$(( seed % ${#VARIANTS[@]} ))
+  local n=${#VARIANTS[@]} idx
+  if [[ -n "$seed" ]]; then
+    idx=$(( seed % n ))                 # explicit --seed: exact and repeatable
+  else
+    # No seed: pick a random scenario, and don't repeat the last one for this type,
+    # so scenarios auto-rotate. The "last seen" marker lives beside the repo because
+    # the .lab state folder is wiped on every start.
+    local last_file="$LAB_ROOT/.lab-last-$type" last=-1
+    [[ -f "$last_file" ]] && last="$(cat "$last_file" 2>/dev/null || echo -1)"
+    for _ in $(seq 1 25); do
+      seed=$(( RANDOM * 32768 + RANDOM ))   # a clean integer, well spread
+      idx=$(( seed % n ))
+      [[ "$n" -le 1 || "$idx" != "$last" ]] && break
+    done
+    echo "$idx" > "$last_file"
+  fi
+  export LAB_SEED="$seed" LAB_MODE="$mode"
   export LAB_VARIANT="${VARIANTS[$idx]}"
 
   cmd_reset

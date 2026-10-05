@@ -80,21 +80,95 @@ check() {
 }
 
 ticket() {
-  cat <<'EOF'
+  # Same symptom every time (a blank white page), but a different reporter and a
+  # different "what changed," so each variant reads as its own ticket. The context
+  # is a realistic clue, not the answer - you still confirm the cause in the logs.
+  case "$LAB_VARIANT" in
+    missing_dep)
+      cat <<'EOF'
 # The whole site is a blank white page
 
-From:     Dana (client, small bakery - takes online orders)
+From:     Dana (client, small bakery)
 Priority: URGENT
 
-This morning the site is just WHITE. Nothing loads, and the login page is blank
-too, so I can't even get into the dashboard. We're losing orders. Help!
-
-A few things changed this week, if it helps: I turned on a new "Cache Helper"
-plugin, our host moved us to a newer version of PHP, and my developer was editing
-some settings files. I don't know which one did it.
+The site is just white this morning, and the login page is blank too, so I can't
+get into the dashboard. Last night I deleted a few plugins I didn't think we used,
+and I turned on a new "Cache Helper" plugin. We're losing orders. Help!
 
 You have: ./lab wp ...   ./lab shell   ./lab logs wordpress
 EOF
+      ;;
+    mu_syntax)
+      cat <<'EOF'
+# The whole site went blank after a code edit
+
+From:     Jordan (the client's part-time developer)
+Priority: URGENT
+
+I pasted a small code snippet into our custom "must-use" helper file last night to
+tweak the footer. This morning every page is blank, including the login page, and I
+can't reach the dashboard to undo it.
+
+You have: ./lab wp ...   ./lab shell   ./lab logs wordpress
+EOF
+      ;;
+    mu_null)
+      cat <<'EOF'
+# Blank white page since this morning
+
+From:     Priya (client)
+Priority: URGENT
+
+Everything was fine yesterday. This morning the whole site is a blank white page,
+front end and login both. Nothing obvious changed on my end, but the site does run
+a couple of custom add-ons a past developer left behind.
+
+You have: ./lab wp ...   ./lab shell   ./lab logs wordpress
+EOF
+      ;;
+    wpconfig_syntax)
+      cat <<'EOF'
+# Site went blank while editing a config file
+
+From:     Sam (developer)
+Priority: URGENT
+
+I was editing wp-config.php to change one setting, saved it, and now the whole site
+is blank, including the login page. WP-CLI also throws an error when I try to run
+anything. I think I mistyped something in the file.
+
+You have: ./lab wp ...   ./lab shell   ./lab logs wordpress
+EOF
+      ;;
+    memory_exhausted)
+      cat <<'EOF'
+# Storefront keeps going to a blank white page
+
+From:     Marcus (store manager)
+Priority: HIGH
+
+The site keeps showing a blank white page, with no error, just white. It got worse
+this week after we switched on a big image-heavy feature on the storefront. It seems
+to happen most on the busy pages.
+
+You have: ./lab wp ...   ./lab shell   ./lab logs wordpress
+EOF
+      ;;
+    php8_removed_func)
+      cat <<'EOF'
+# Site white-screened right after a PHP upgrade
+
+From:     Dana (client)
+Priority: URGENT
+
+Our host emailed to say they upgraded our PHP version overnight. Since then the
+whole site is a blank white page and I can't log in. We didn't change anything
+ourselves. Could the upgrade have done this?
+
+You have: ./lab wp ...   ./lab shell   ./lab logs wordpress
+EOF
+      ;;
+  esac
 }
 
 hint_count() { echo 4; }
