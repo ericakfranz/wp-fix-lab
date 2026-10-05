@@ -183,7 +183,9 @@ run_quiz() {
     elif [[ "$line" == ANSWER:* ]]; then
       answer="${line#ANSWER: }"
       read -r -p "  Your answer: " reply </dev/tty
-      if [[ "${reply^^}" == "$answer" ]]; then pass "correct"; else fail "not quite (answer: $answer)"; wrong=1; fi
+      # Uppercase via tr (works on macOS bash 3.2, where ${reply^^} does not).
+      reply="$(printf '%s' "$reply" | tr '[:lower:]' '[:upper:]')"
+      if [[ "$reply" == "$answer" ]]; then pass "correct"; else fail "not quite (answer: $answer)"; wrong=1; fi
     fi
   done < <(quiz)
   return "$wrong"

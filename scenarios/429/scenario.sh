@@ -14,7 +14,7 @@ LAB_POLL_BUDGET=20
 install_guardrail() {
   cp "$LAB_ROOT"/scenarios/429/files/nginx/platform-ratelimit.*.conf "$LAB_ROOT/nginx/lab/"
   compose exec -T nginx nginx -s reload
-  ( cd / && sha256sum "$LAB_ROOT"/nginx/lab/platform-ratelimit.*.conf ) > "$LAB_STATE/guardrail.sha256"
+  hash_files "$LAB_ROOT"/nginx/lab/platform-ratelimit.*.conf > "$LAB_STATE/guardrail.sha256"
 }
 
 apply_break() {
@@ -56,8 +56,10 @@ front_poll_rate() {
 }
 
 check() {
-  # 1. The platform guardrail must be exactly as the host left it.
-  if ( cd / && sha256sum --status -c "$LAB_STATE/guardrail.sha256" ) 2>/dev/null; then
+  # 1. The platform guardrail must be exactly as the host left it. Compare the current
+  #    hash of the rule files to the one recorded when the scenario started.
+  local now; now="$(hash_files "$LAB_ROOT"/nginx/lab/platform-ratelimit.*.conf 2>/dev/null || true)"
+  if [[ -s "$LAB_STATE/guardrail.sha256" && "$now" == "$(cat "$LAB_STATE/guardrail.sha256")" ]]; then
     pass "Platform rate-limit rules are untouched"
   else
     fail "The platform rate-limit rules were changed/removed - that's the host's guardrail, not the bug"

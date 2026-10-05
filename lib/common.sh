@@ -63,6 +63,12 @@ mu_install() {
 # True when the lab is in training mode (hints, runbook, quiz). Test mode: grader only.
 is_training() { [[ "${LAB_MODE:-training}" == training ]]; }
 
+# Hash files, printing "hash  path" lines. Uses sha256sum (Linux) or shasum (macOS).
+hash_files() {
+  if command -v sha256sum >/dev/null 2>&1; then sha256sum "$@"
+  else shasum -a 256 "$@"; fi
+}
+
 # Deterministic 0..(n-1) pick from the seed, salted so different choices don't move together.
 seed_pick() {
   local salt="$1" n="$2" h

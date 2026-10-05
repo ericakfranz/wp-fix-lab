@@ -2,7 +2,7 @@
 
 A hands-on troubleshooting lab for WordPress support and operations roles. It boots a
 real WordPress stack, breaks it the way production sites actually break, hands you the
-support ticket, and grades whether you fixed it — with a clear **PASS / FAIL**.
+support ticket, and grades whether you fixed it with a clear **PASS / FAIL**.
 
 [![Scenarios](https://github.com/YOUR-GITHUB-USERNAME/wp-fix-lab/actions/workflows/scenarios.yml/badge.svg)](https://github.com/YOUR-GITHUB-USERNAME/wp-fix-lab/actions/workflows/scenarios.yml)
 
@@ -10,7 +10,7 @@ support ticket, and grades whether you fixed it — with a clear **PASS / FAIL**
 
 Each error **type** is a *generator*, not a fixed puzzle. A seed picks one of several
 root causes and a set of red herrings, so starting the same type twice gives you a
-different problem. You can't pass by memorising "the answer to the 429 one" — you have
+different problem. You can't pass by memorising "the answer to the 429 one"; you have
 to actually diagnose what's in front of you. The grader checks that the **site works
 again**, not that you ran a particular command, so "fixing" a red herring still FAILs.
 
@@ -35,7 +35,7 @@ Docker is a free program that runs the little WordPress website on your computer
    - **Mac:** choose "Apple Silicon" if your Mac is from 2020 or later; choose "Intel chip" if it's older. (Not sure? Click the Apple logo, top-left → *About This Mac*. If it says "Apple M1/M2/M3…", that's Apple Silicon.)
    - **Windows:** download "Docker Desktop for Windows." During install, keep the default options and click Yes if it asks to add WSL 2.
 2. Open the downloaded file and follow the installer, like installing any other app.
-3. **Start Docker Desktop** (open it from your Applications/Start menu). The first launch takes a minute. Wait until the little whale icon in your menu bar / system tray stops animating and sits still. **Docker Desktop must be open and running whenever you use the lab.** This is the #1 thing people forget.
+3. **Start Docker Desktop** (open it from your Applications/Start menu). The first launch takes a minute. Wait until the little whale icon in your menu bar / system tray stops animating and sits still. **Docker Desktop must be open and running whenever you use the lab**, so start it first each time.
 
 ### Step 2 — Get the lab files onto your computer
 
