@@ -1,0 +1,11 @@
+Q: Before touching wp-config.php, what's the first thing worth confirming?
+A) That the database server is actually up and accepting connections
+B) That WordPress core files aren't corrupted
+C) That the theme is compatible with the PHP version
+ANSWER: A
+
+Q: Why did DB_HOST = 127.0.0.1 break the site?
+A) MySQL doesn't accept IP addresses
+B) 127.0.0.1 means "this machine", but on this server the database runs on a separate host
+C) The port number was missing
+ANSWER: B
