@@ -32,6 +32,10 @@ Usage: $LAB_CMD <command>
   check                      Grade your fix: PASS / FAIL
   ticket                     Show the current ticket again
   history                    Show your last 10 solved scenarios (time + seed)
+  exam [n] [--minutes M]     Gauntlet: n random scenarios back-to-back, test mode.
+                             No time limit by default; --minutes M fails you if the
+                             clock runs out. Total time is reported at the end.
+                             Also: exam status, exam stop.
   reset                      Rebuild a clean, working site
   down                       Stop everything and delete the lab's data
 
@@ -80,6 +84,7 @@ load_type() {
 cmd_list() {
   local d type
   for d in "$LAB_ROOT"/scenarios/*/; do
+    [[ -f "$d/scenario.sh" ]] || continue     # skip shared folders like _templates
     type="$(basename "$d")"
     ( load_type "$type"; printf '  %-16s %-42s (%d variants)\n' "$type" "$SCENARIO_TITLE" "${#VARIANTS[@]}" )
   done
@@ -140,6 +145,14 @@ cmd_start() {
     done
     echo "$idx" > "$last_file"
   fi
+  run_scenario "$type" "$seed" "$mode"
+}
+
+# Build and present one scenario. Shared by `start` and `exam`.
+run_scenario() {
+  local type="$1" seed="$2" mode="$3" exam="${4:-}"
+  load_type "$type"
+  local n=${#VARIANTS[@]}; local idx=$(( seed % n ))
   export LAB_SEED="$seed" LAB_MODE="$mode"
   export LAB_VARIANT="${VARIANTS[$idx]}"
 
@@ -153,9 +166,12 @@ cmd_start() {
   printf '%s' "$LAB_VARIANT" > "$LAB_STATE/variant"
   date +%s > "$LAB_STATE/started_at"
   echo 0  > "$LAB_STATE/hints_used"
+  [[ -n "$exam" ]] && echo 1 > "$LAB_STATE/exam"
 
   echo
-  if [[ "$mode" == test ]]; then
+  if [[ -n "$exam" ]]; then
+    printf '=== EXAM ===  type: %s   seed: %s\n\n' "$type" "$seed"
+  elif [[ "$mode" == test ]]; then
     printf '=== TEST MODE ===  type: %s   seed: %s\n\n' "$type" "$seed"
   else
     printf '=== TRAINING MODE ===  type: %s   seed: %s\n\n' "$type" "$seed"
@@ -236,6 +252,7 @@ cmd_check() {
   CHECK_FAILED=0
   check
   echo
+  local passed=0
   if [[ "$CHECK_FAILED" -ne 0 ]]; then
     printf '\033[31mFAIL\033[0m - not fixed yet.\n'
     # Record the failed attempt once per scenario, so repeated checks don't pile up.
@@ -243,22 +260,23 @@ cmd_check() {
       log_attempt "fail"; : > "$LAB_STATE/logged_fail"
     fi
     if is_training; then echo "Keep going. A nudge: $LAB_CMD hint"; fi
-    echo "Recent attempts: $LAB_CMD history"
-    return 1
+  else
+    printf '\033[32mPASS\033[0m - the site is healthy again.\n'
+    passed=1
+    local result="pass"
+    if is_training && [[ -z "${LAB_NONINTERACTIVE:-}" ]]; then
+      run_quiz || result="pass (diagnosis incomplete)"
+      echo; echo "Full write-up for this type: $LAB_CMD runbook"
+    fi
+    local started elapsed; started="$(state_get started_at)"; elapsed=$(( $(date +%s) - started ))
+    printf '\nResult: %s in %dm %02ds  [mode: %s, seed: %s, hints: %s]\n' \
+      "$result" $((elapsed/60)) $((elapsed%60)) "$(state_get mode)" "$(state_get seed)" "$(state_get hints_used)"
+    log_attempt "$result"
   fi
-  printf '\033[32mPASS\033[0m - the site is healthy again.\n'
-
-  local result="pass"
-  if is_training && [[ -z "${LAB_NONINTERACTIVE:-}" ]]; then
-    run_quiz || result="pass (diagnosis incomplete)"
-    echo; echo "Full write-up for this type: $LAB_CMD runbook"
-  fi
-
-  local started elapsed; started="$(state_get started_at)"; elapsed=$(( $(date +%s) - started ))
-  printf '\nResult: %s in %dm %02ds  [mode: %s, seed: %s, hints: %s]\n' \
-    "$result" $((elapsed/60)) $((elapsed%60)) "$(state_get mode)" "$(state_get seed)" "$(state_get hints_used)"
-  log_attempt "$result"
   echo "Recent attempts: $LAB_CMD history"
+
+  if [[ "$(state_get exam)" == 1 ]]; then exam_after_check "$passed"; fi
+  [[ "$passed" -eq 1 ]]
 }
 
 # Show the last 10 solved scenarios, most recent first.
@@ -290,6 +308,130 @@ cmd_history() {
   echo "  (PASS* = solved but missed a diagnosis question.  FAIL = checked while still broken.)"
 }
 
+# ---- exam / gauntlet mode -------------------------------------------------
+EXAM_DIR="$LAB_ROOT/.lab-exam"
+
+# Variant count for a type (in a subshell, so VARIANTS doesn't leak).
+type_variant_count() ( VARIANTS=(); # shellcheck disable=SC1090
+  source "$LAB_ROOT/scenarios/$1/scenario.sh"; echo "${#VARIANTS[@]}" )
+
+# Build a queue of distinct (type, variant) scenarios, written as "type<TAB>seed".
+exam_build_queue() {
+  local want="$1" types=() d t seed n idx key seen="" picked=0 tries=0
+  for d in "$LAB_ROOT"/scenarios/*/; do [[ -f "$d/scenario.sh" ]] && types+=("$(basename "$d")"); done
+  : > "$EXAM_DIR/queue"
+  while (( picked < want && tries < 800 )); do
+    tries=$(( tries + 1 ))
+    t="${types[$(( RANDOM % ${#types[@]} ))]}"
+    seed=$(( RANDOM * 32768 + RANDOM ))
+    n="$(type_variant_count "$t")"
+    idx=$(( seed % n )); key="$t:$idx"
+    case " $seen " in *" $key "*) continue ;; esac
+    seen="$seen $key"
+    printf '%s\t%s\n' "$t" "$seed" >> "$EXAM_DIR/queue"
+    picked=$(( picked + 1 ))
+  done
+}
+
+exam_remaining() { wc -l < "$EXAM_DIR/queue" | tr -d ' '; }
+
+cmd_exam() {
+  case "${1:-}" in
+    status) exam_status; return 0 ;;
+    stop)   rm -rf "$EXAM_DIR"; echo "Exam cancelled."; return 0 ;;
+  esac
+  local count=5 minutes=0
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --minutes)   minutes="${2:-0}"; shift ;;
+      --minutes=*) minutes="${1#--minutes=}" ;;
+      --*)         die "Unknown option '$1'" ;;
+      *)           [[ "$1" =~ ^[0-9]+$ ]] && count="$1" ;;
+    esac
+    shift
+  done
+  [[ "$minutes" =~ ^[0-9]+$ ]] || die "--minutes takes a number."
+  (( count >= 1 )) || die "Exam needs at least 1 scenario."
+
+  rm -rf "$EXAM_DIR"; mkdir -p "$EXAM_DIR"
+  exam_build_queue "$count"
+  local actual; actual="$(exam_remaining)"   # may be < count if few distinct variants exist
+  printf '%s' "$actual"            > "$EXAM_DIR/total"
+  printf '%s' "$(( minutes * 60 ))" > "$EXAM_DIR/limit"
+  date +%s                          > "$EXAM_DIR/started"
+
+  echo
+  echo "=== EXAM: $actual scenarios, test mode (no hints, no runbook) ==="
+  if (( minutes > 0 )); then
+    echo "Time limit: ${minutes} min total. The clock is checked each time you run '$LAB_CMD check'."
+  else
+    echo "No time limit. Your total time is reported when you finish."
+  fi
+  echo
+  exam_next
+}
+
+# Launch the scenario at the head of the queue.
+exam_next() {
+  local total remaining cleared line t s
+  total="$(cat "$EXAM_DIR/total")"; remaining="$(exam_remaining)"; cleared=$(( total - remaining ))
+  if (( remaining == 0 )); then exam_finish; return 0; fi
+  line="$(head -n1 "$EXAM_DIR/queue")"; t="${line%%$'\t'*}"; s="${line##*$'\t'}"
+  printf 'Scenario %d of %d\n' "$(( cleared + 1 ))" "$total"
+  run_scenario "$t" "$s" test exam
+}
+
+# Called by cmd_check when an exam is active. $1 = 1 if the scenario passed.
+exam_after_check() {
+  local passed="$1" started limit now el
+  started="$(cat "$EXAM_DIR/started" 2>/dev/null || echo 0)"
+  limit="$(cat "$EXAM_DIR/limit" 2>/dev/null || echo 0)"
+  now="$(date +%s)"; el=$(( now - started ))
+
+  if (( limit > 0 && el > limit )); then exam_timeup "$el"; return 0; fi
+
+  if (( passed )); then
+    local tmp; tmp="$(mktemp)"; tail -n +2 "$EXAM_DIR/queue" > "$tmp"; mv "$tmp" "$EXAM_DIR/queue"
+    if (( limit > 0 )); then printf 'Exam clock: %dm %02ds of %dm used.\n' $((el/60)) $((el%60)) $((limit/60)); fi
+    if (( "$(exam_remaining)" == 0 )); then exam_finish; else echo; exam_next; fi
+  elif (( limit > 0 )); then
+    printf 'Exam clock: %dm %02ds of %dm used.\n' $((el/60)) $((el%60)) $((limit/60))
+  fi
+}
+
+exam_timeup() {
+  local el="$1" total remaining cleared
+  total="$(cat "$EXAM_DIR/total")"; remaining="$(exam_remaining)"; cleared=$(( total - remaining ))
+  printf '\n\033[31m*** TIME UP - EXAM FAILED ***\033[0m\n'
+  printf 'You cleared %d of %d before the clock ran out (%dm %02ds).\n' "$cleared" "$total" $((el/60)) $((el%60))
+  echo "Try again:  $LAB_CMD exam $total --minutes <N>"
+  rm -rf "$EXAM_DIR"
+}
+
+exam_finish() {
+  local total started el
+  total="$(cat "$EXAM_DIR/total")"; started="$(cat "$EXAM_DIR/started")"
+  el=$(( $(date +%s) - started ))
+  printf '\n\033[32m*** EXAM COMPLETE ***\033[0m\n'
+  printf 'You cleared all %d scenarios in %dm %02ds.\n' "$total" $((el/60)) $((el%60))
+  rm -rf "$EXAM_DIR"
+}
+
+exam_status() {
+  [[ -d "$EXAM_DIR" ]] || { echo "No exam in progress. Start one: $LAB_CMD exam [count] [--minutes N]"; return 0; }
+  local total started limit remaining cleared now el
+  total="$(cat "$EXAM_DIR/total")"; started="$(cat "$EXAM_DIR/started")"; limit="$(cat "$EXAM_DIR/limit")"
+  remaining="$(exam_remaining)"; cleared=$(( total - remaining )); now="$(date +%s)"; el=$(( now - started ))
+  printf 'Exam: %d of %d done, %d left. Elapsed %dm %02ds.\n' "$cleared" "$total" "$remaining" $((el/60)) $((el%60))
+  if (( limit > 0 )); then
+    if (( el > limit )); then
+      echo "TIME UP - run '$LAB_CMD check' to end it, or '$LAB_CMD exam stop'."
+    else
+      printf 'Time left: %dm %02ds.\n' $(( (limit-el)/60 )) $(( (limit-el)%60 ))
+    fi
+  fi
+}
+
 # Apply the reference fix. Spoiler; used by CI to prove each scenario is fixable.
 cmd_solve() { restore_run; fix; }
 
@@ -303,8 +445,9 @@ main() {
     hint)    cmd_hint ;;
     runbook) cmd_runbook ;;
     history) cmd_history ;;
+    exam)    cmd_exam "$@" ;;
     reset)   cmd_reset; rm -rf "$LAB_STATE" ;;
-    down)    compose --profile tools down -v --remove-orphans; rm -rf "$LAB_STATE" ;;
+    down)    compose --profile tools down -v --remove-orphans; rm -rf "$LAB_STATE" "$LAB_ROOT/.lab-exam" ;;
     wp)      wp "$@" ;;
     shell)   compose exec -u www-data wordpress bash ;;
     logs)    compose logs --tail=100 "$@" ;;

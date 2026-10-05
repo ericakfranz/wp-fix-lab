@@ -72,44 +72,47 @@ check() {
 }
 
 ticket() {
-  case "$LAB_VARIANT" in
-    db_stopped)
-      cat <<'EOF'
-# Site down: "Error establishing a database connection"
-
-From:     Monitoring alert, forwarded by the client
-Priority: URGENT - whole site is down
-
-Every page shows "Error establishing a database connection." Nobody changed any
-code today, so the client is asking if something on the server side fell over.
-
-You have: ./lab wp ...   ./lab shell   ./lab logs wordpress   ./lab logs db
-EOF
-      ;;
-    wrong_prefix)
-      cat <<'EOF'
-# Site is trying to reinstall itself / tables "missing"
-
-From:     Sam (developer, just ran a migration script)
-Priority: URGENT
-
-After I ran a script to tidy up the database, the site either shows a database
-error or tries to send me to the WordPress install screen, as if all our content
-is gone. The data should still be there. Please help before anyone panics.
-
-You have: ./lab wp ...   ./lab shell   ./lab logs wordpress   ./lab logs db
-EOF
-      ;;
-    *)
+  # Vague, client-voice tickets by seed. None of them says which setting is wrong or
+  # whether the server is down - the logs and the config tell you that.
+  case "$(seed_pick ticket 3)" in
+    0)
       cat <<'EOF'
 # "Error establishing a database connection"
 
 From:     Priya (freelance dev, working on a client's store)
 Priority: URGENT - whole site is down
 
-The site went down while I was in wp-config.php. I SWEAR I only added a line to
-turn on debug mode to chase a layout bug. Now every page says "Error establishing
-a database connection." Is your database server down??
+The site went down while I was poking around in wp-config.php. I only meant to turn
+on debug mode to chase a layout bug. Now every page shows a database error. Is your
+database server down, or did I break something?
+
+You have: ./lab wp ...   ./lab shell   ./lab logs wordpress   ./lab logs db
+EOF
+      ;;
+    1)
+      cat <<'EOF'
+# Site is down with a database error
+
+From:     Marcus (store manager)
+Priority: URGENT
+
+Every page is showing a database error this morning and the whole shop is offline.
+I don't know what changed. Can you find out why it can't reach the database and get
+us back up?
+
+You have: ./lab wp ...   ./lab shell   ./lab logs wordpress   ./lab logs db
+EOF
+      ;;
+    *)
+      cat <<'EOF'
+# Database error / content looks gone
+
+From:     Sam (developer)
+Priority: URGENT
+
+The site won't load - it throws a database error, and at one point it looked like it
+wanted to run the WordPress installer, as if our content vanished. The data should
+still be there. I need to work out what it's actually failing on.
 
 You have: ./lab wp ...   ./lab shell   ./lab logs wordpress   ./lab logs db
 EOF

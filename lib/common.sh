@@ -51,15 +51,6 @@ cli_sh() { compose run --rm -T --entrypoint sh cli -c "$1"; }
 # take WP-CLI down with it. The scalpel for a broken site.
 wp_safe() { compose run --rm -T cli wp --skip-plugins --skip-themes "$@"; }
 
-# Copy a plugin folder from a scenario into wp-content/plugins.
-install_plugin_from() { cli_sh "cp -r '/lab/scenarios/$1' /var/www/html/wp-content/plugins/"; }
-
-# Drop a PHP file from a scenario's files/ into wp-content/mu-plugins (always loaded,
-# can't be deactivated from the admin - so a fatal here is nastier to clear).
-mu_install() {
-  cli_sh "mkdir -p /var/www/html/wp-content/mu-plugins && cp '/lab/scenarios/$1' /var/www/html/wp-content/mu-plugins/"
-}
-
 # True when the lab is in training mode (hints, runbook, quiz). Test mode: grader only.
 is_training() { [[ "${LAB_MODE:-training}" == training ]]; }
 
@@ -74,4 +65,53 @@ seed_pick() {
   local salt="$1" n="$2" h
   h=$(printf '%s' "${LAB_SEED:-0}:$salt" | cksum | cut -d' ' -f1)
   echo $(( h % n ))
+}
+
+# ---- randomised plugin identities -----------------------------------------
+# Real-sounding (but invented) plugin names, so the culprit never stands out and
+# you can't memorise "deactivate <fixed name>" - you must read the logs each run.
+# shellcheck disable=SC2034
+LAB_PLUGIN_SLUGS=(smart-social-share easy-contact-form simple-image-gallery rapid-cache \
+  seo-meta-tags popup-box-lite related-posts cookie-consent-banner live-sales-alerts \
+  currency-switcher table-of-contents simple-breadcrumbs)
+# shellcheck disable=SC2034
+LAB_PLUGIN_NAMES=("Smart Social Share" "Easy Contact Form" "Simple Image Gallery" "Rapid Cache" \
+  "SEO Meta Tags" "Popup Box Lite" "Related Posts" "Cookie Consent Banner" "Live Sales Alerts" \
+  "Currency Switcher" "Table of Contents" "Simple Breadcrumbs")
+
+# Write a plugin from a token template into wp-content/plugins/<slug>/<slug>.php.
+# Tokens: {{NAME}} {{SLUG}} {{FN}} {{MS}} {{ACTION}} {{GATE}} (unused ones are harmless).
+materialize_plugin() {
+  local slug="$1" name="$2" tpl="$3" fn="${4:-noop}" ms="${5:-0}" action="${6:-noop_action}" gate="${7:-}"
+  cli_sh "mkdir -p /var/www/html/wp-content/plugins/'$slug' && sed \
+    -e 's|{{NAME}}|$name|g' -e 's|{{SLUG}}|$slug|g' -e 's|{{FN}}|$fn|g' \
+    -e 's|{{MS}}|$ms|g' -e 's|{{ACTION}}|$action|g' -e 's|{{GATE}}|$gate|g' \
+    '/lab/scenarios/$tpl' > /var/www/html/wp-content/plugins/'$slug'/'$slug'.php"
+}
+
+# Write a must-use plugin from a token template into wp-content/mu-plugins/<fname>.
+materialize_mu() {
+  local fname="$1" tpl="$2" name="${3:-Helper}"
+  cli_sh "mkdir -p /var/www/html/wp-content/mu-plugins && sed \
+    -e 's|{{NAME}}|$name|g' '/lab/scenarios/$tpl' > /var/www/html/wp-content/mu-plugins/'$fname'"
+}
+
+# Install N innocent decoy plugins whose slugs are offset from the culprit's index,
+# so the culprit doesn't stand out by name. Echoes the first decoy's slug (the grader
+# checks it stays active, so "deactivate everything" can't pass).
+install_decoys() {
+  local culprit_idx="$1" count="${2:-2}" n=${#LAB_PLUGIN_SLUGS[@]} i d first=""
+  for (( i=1; i<=count; i++ )); do
+    d=$(( (culprit_idx + i) % n ))
+    materialize_plugin "${LAB_PLUGIN_SLUGS[$d]}" "${LAB_PLUGIN_NAMES[$d]}" _templates/tpl-innocent.php
+    wp plugin activate "${LAB_PLUGIN_SLUGS[$d]}" >/dev/null 2>&1 || true
+    [[ -z "$first" ]] && first="${LAB_PLUGIN_SLUGS[$d]}"
+  done
+  echo "$first"
+}
+
+# Absolute path to the active theme's functions.php (call while WP-CLI still works).
+active_theme_functions() {
+  local t; t="$(wp theme list --status=active --field=name 2>/dev/null | head -n1 | tr -d '\r')"
+  [[ -n "$t" ]] && echo "/var/www/html/wp-content/themes/$t/functions.php"
 }
