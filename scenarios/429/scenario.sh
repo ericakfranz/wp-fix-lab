@@ -5,7 +5,7 @@
 # throws "Connection lost" in the editor. The rate limit is the host's guardrail -
 # fixing the SITE is the job; disabling the guardrail is the wrong answer.
 SCENARIO_TITLE="429 / admin-ajax flood"
-VARIANTS=(single_fast hardcoded_decoy two_plugins)
+VARIANTS=(single_fast hardcoded_decoy two_plugins logged_out_only)
 
 # Requests/minute the plugins may add on the front page before we call it a flood.
 # (Heartbeat and real admin-ajax use need headroom under the platform's 30/min.)
@@ -33,6 +33,9 @@ apply_break() {
       wp plugin activate live-order-feed price-ticker
       wp option update lof_poll_interval 5             # each looks modest at 5s...
       wp option update priceticker_interval 5 ;;       # ...but 12+12 req/min together trips it
+    logged_out_only)
+      install_plugin_from 429/files/promo-popup
+      wp plugin activate promo-popup ;;                # polls only for logged-out visitors
   esac
   install_guardrail
 }
@@ -42,6 +45,7 @@ fix() {
     single_fast)     wp option update lof_poll_interval 60 ;;   # once a minute
     hardcoded_decoy) wp plugin deactivate stock-pinger ;;       # setting is ignored; turn it off
     two_plugins)     wp plugin deactivate price-ticker ;;       # drop one; the other fits the budget
+    logged_out_only) wp plugin deactivate promo-popup ;;        # only visitors saw it; turn it off
   esac
 }
 
@@ -97,7 +101,9 @@ NOTE: you're on the HOSTING SUPPORT team. The platform's rate-limit rules live i
 nginx/lab/platform-ratelimit.* and protect every customer on this server. They are
 NOT yours to edit. Fix the site, not the guardrail.
 
-Reproduce it: open the site (admin / admin), watch the Network tab for admin-ajax.php.
+Reproduce it: open the site, watch the Network tab for admin-ajax.php. If you don't
+see the flood while logged in as admin, try a logged-out / incognito window - some
+widgets only run for visitors.
 You have: ./lab wp ...   ./lab shell   ./lab logs nginx
 EOF
 }
@@ -106,7 +112,7 @@ hint_count() { echo 4; }
 hint() {
   case "$1" in
     1) echo "Find out WHO returns the 429 before touching anything. './lab logs nginx' will show it rejecting requests with 'limiting requests ... zone \"ajax\"'. That's the platform guardrail, and the ticket says it's off-limits. So the real question is: what's making so many requests?" ;;
-    2) echo "In the Network tab, filter on 'admin-ajax'. Look at how OFTEN the same request repeats and what 'action=' it carries. That action name maps to a plugin: 'grep -r wp_ajax_<action> wp-content/plugins'." ;;
+    2) echo "In the Network tab, filter on 'admin-ajax'. Look at how OFTEN the same request repeats and what 'action=' it carries. That action name maps to a plugin: 'grep -r wp_ajax_<action> wp-content/plugins'. If you see nothing while logged in, reproduce in a logged-out / incognito window - some plugins only run for visitors." ;;
     3) echo "Heartbeat also posts to admin-ajax.php, which is why the editor says 'Connection lost' - it's collateral damage from the flood eating the per-IP budget. Count the total requests/min the storefront makes; a single page can be fine while two widgets together are not." ;;
     4) echo "Fix the plugin's behavior, not the limit: raise its polling interval (if the setting actually works - check that it does), or deactivate the offender. Removing the rate limit would 'work' and is exactly the wrong answer." ;;
   esac
@@ -130,6 +136,12 @@ Q: The client asks you to remove the rate limit. Why is that the wrong fix?
 A) It isn't - it's the fastest fix
 B) It spends every other site's resources to cover one plugin hammering PHP, and hides the real cause
 C) nginx can't be edited without a full reboot
+ANSWER: B
+
+Q: You can't reproduce the flood while logged in as admin. What should you try?
+A) Assume the client is wrong
+B) Reproduce as the affected user - a logged-out / incognito window, since some code only runs for visitors
+C) Reinstall WordPress
 ANSWER: B
 EOF
 }

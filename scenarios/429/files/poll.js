@@ -1,5 +1,5 @@
 ( function () {
-	var keys = ['liveOrderFeed','stockPinger','priceTicker'];
+	var keys = ['liveOrderFeed','stockPinger','priceTicker','promoPopup'];
 	keys.forEach( function ( k ) {
 		var cfg = window[k];
 		if ( ! cfg || ! cfg.ajaxUrl ) { return; }

@@ -170,12 +170,13 @@ Everything else works the same as on your computer. Delete the codespace at **gi
 
 | Type | Ticket | Variants |
 |---|---|---|
-| `database` | "Error establishing a database connection" | wrong host / password / DB name / port, with seed-randomised values |
-| `fatal` | Blank white page / fatal 500 | missing plugin dependency · mu-plugin syntax error · null-method fatal (PHP 8) |
-| `429` | "Connection lost" + 429 errors | one fast poller · hard-coded interval with a decoy setting · two plugins that only flood *together* |
+| `database` | "Error establishing a database connection" | 6: wrong host / password / DB name / port, the database server stopped, wrong table prefix (seed-randomised values) |
+| `fatal` | Blank white page / fatal 500 | 6: missing plugin dependency, mu-plugin syntax error, null-method fatal, wp-config.php syntax error, PHP memory exhausted, a function removed in PHP 8 |
+| `429` | "Connection lost" + 429 errors | 4: one fast poller, hard-coded interval with a decoy setting, two plugins that only flood *together*, a plugin that only polls for logged-out visitors |
 
-Each type folder has a `RUNBOOK.md` with the full triage path for every variant. It's a
-spoiler — so are `scenario.sh`'s `fix`/`break` functions.
+Each variant also randomises its details from the seed, so one variant still produces
+many distinct-looking problems. Each type folder has a `RUNBOOK.md` with the full triage
+path. It's a spoiler, and so are `scenario.sh`'s `fix` and `apply_break` functions.
 
 ## How it's tested
 
