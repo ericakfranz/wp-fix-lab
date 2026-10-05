@@ -47,5 +47,25 @@ die()  { printf '\033[31merror:\033[0m %s\n' "$*" >&2; exit 1; }
 # Run a shell command in the WP-CLI container (has the scenarios folder mounted at /lab/scenarios).
 cli_sh() { compose run --rm -T --entrypoint sh cli -c "$1"; }
 
+# WP-CLI with plugins AND must-use plugins skipped, so a fatal in site code can't
+# take WP-CLI down with it. The scalpel for a broken site.
+wp_safe() { compose run --rm -T cli wp --skip-plugins --skip-themes "$@"; }
+
 # Copy a plugin folder from a scenario into wp-content/plugins.
 install_plugin_from() { cli_sh "cp -r '/lab/scenarios/$1' /var/www/html/wp-content/plugins/"; }
+
+# Drop a PHP file from a scenario's files/ into wp-content/mu-plugins (always loaded,
+# can't be deactivated from the admin - so a fatal here is nastier to clear).
+mu_install() {
+  cli_sh "mkdir -p /var/www/html/wp-content/mu-plugins && cp '/lab/scenarios/$1' /var/www/html/wp-content/mu-plugins/"
+}
+
+# True when the lab is in training mode (hints, runbook, quiz). Test mode: grader only.
+is_training() { [[ "${LAB_MODE:-training}" == training ]]; }
+
+# Deterministic 0..(n-1) pick from the seed, salted so different choices don't move together.
+seed_pick() {
+  local salt="$1" n="$2" h
+  h=$(printf '%s' "${LAB_SEED:-0}:$salt" | cksum | cut -d' ' -f1)
+  echo $(( h % n ))
+}

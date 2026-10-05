@@ -1,4 +1,4 @@
-name: wp-breakfix-lab
+name: wp-fix-lab
 
 services:
   db:
