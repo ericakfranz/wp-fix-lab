@@ -1,29 +1,34 @@
 # Runbook: Error establishing a database connection
 
-> Spoilers. Solve it first. This type has four root causes; the seed picks one.
+Read this only after you have tried to solve it. This type has four possible
+causes, and the seed picks one of them.
 
-## Symptoms
-- Every page: "Error establishing a database connection."
-- With `WP_DEBUG` on, a line in `./lab logs wordpress` such as
-  `mysqli_real_connect(): (HY000/2002): Connection refused`.
+## What you see
 
-## Triage, in order
-1. **Is the DB server actually down?** `./lab logs db` — if MariaDB says "ready for
-   connections," the server is fine and the problem is how WordPress *connects*.
-2. **Read the specific error code** (this is what tells the variants apart):
-   - `2002 Connection refused` → wrong **host** or **port** (nothing is listening there).
-   - `1045 Access denied` → wrong **user/password**.
-   - `1049 Unknown database` → wrong **DB name** (server reached, database missing).
-3. **Compare config to reality:** `./lab wp config list`. On this stack the database
-   is a separate container: host `db`, port `3306`, user/pass/name all `wordpress`.
-4. **Ignore the decoy.** `WP_DEBUG` being on is the last thing the dev touched, not the
-   cause. Trust the file, not their memory — people paste more than they remember.
+Every page shows the same line: "Error establishing a database connection."
 
-## Fix
-`./lab wp config set DB_<thing> <correct value>` for the one wrong value, then
-`./lab wp config set WP_DEBUG false --raw`. WP-CLI's `config` edits wp-config.php
-directly, so it works even when WordPress itself can't connect.
+## How to work through it
 
-## Prevent
-Keep environment-specific values out of hand edits (env vars / a separate local
-config), and diff wp-config.php before and after any change.
+1. Check that the database server is up. Run `./lab logs db`. If it says "ready for
+   connections," the server is fine. So the problem is how WordPress connects to it.
+2. Read the exact error. With `WP_DEBUG` on, run `./lab logs wordpress` and read the
+   mysqli line. The wording tells you which setting is wrong:
+   - "Connection refused" (2002): wrong host or port.
+   - "Access denied" (1045): wrong username or password.
+   - "Unknown database" (1049): wrong database name.
+3. Compare the settings to reality. Run `./lab wp config list`. In this lab the
+   database is a separate container: host `db`, port `3306`, and the username,
+   password, and name are all `wordpress`. One of those four is wrong.
+4. Ignore the decoy. The debug line the developer added did not break the site. It is
+   only the last thing they touched. Trust the file, not their memory.
+
+## How to fix it
+
+Set the one wrong value back, for example `./lab wp config set DB_HOST db`. Then turn
+debug off with `./lab wp config set WP_DEBUG false --raw`. WP-CLI's config command
+edits wp-config.php directly, so it works even when WordPress cannot connect.
+
+## How to prevent it
+
+Keep site-specific values out of hand-typed edits. Back up wp-config.php before you
+change it, so you can compare it afterward and see what changed.
