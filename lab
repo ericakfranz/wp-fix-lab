@@ -31,6 +31,7 @@ Usage: $LAB_CMD <command>
   start <type> [options]     Reset the site, break it, show the ticket
   check                      Grade your fix: PASS / FAIL
   ticket                     Show the current ticket again
+  history                    Show your last 10 solved scenarios (time + seed)
   reset                      Rebuild a clean, working site
   down                       Stop everything and delete the lab's data
 
@@ -216,6 +217,17 @@ run_quiz() {
   return "$wrong"
 }
 
+# Append one tab-separated record to the history log: when, type, mode, result,
+# elapsed seconds, seed, hints. Read back by '$LAB_CMD history'.
+log_attempt() {
+  local result="$1" started now elapsed
+  started="$(state_get started_at)"; now="$(date +%s)"
+  elapsed=$(( now - ${started:-now} ))
+  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+    "$(date -u +%FT%TZ)" "$(current_type)" "$(state_get mode)" "$result" "$elapsed" \
+    "$(state_get seed)" "$(state_get hints_used)" >> "$LAB_ROOT/results.log"
+}
+
 cmd_check() {
   restore_run
   local type; type="$(current_type)"
@@ -226,7 +238,12 @@ cmd_check() {
   echo
   if [[ "$CHECK_FAILED" -ne 0 ]]; then
     printf '\033[31mFAIL\033[0m - not fixed yet.\n'
+    # Record the failed attempt once per scenario, so repeated checks don't pile up.
+    if [[ ! -f "$LAB_STATE/logged_fail" ]]; then
+      log_attempt "fail"; : > "$LAB_STATE/logged_fail"
+    fi
     if is_training; then echo "Keep going. A nudge: $LAB_CMD hint"; fi
+    echo "Recent attempts: $LAB_CMD history"
     return 1
   fi
   printf '\033[32mPASS\033[0m - the site is healthy again.\n'
@@ -240,9 +257,37 @@ cmd_check() {
   local started elapsed; started="$(state_get started_at)"; elapsed=$(( $(date +%s) - started ))
   printf '\nResult: %s in %dm %02ds  [mode: %s, seed: %s, hints: %s]\n' \
     "$result" $((elapsed/60)) $((elapsed%60)) "$(state_get mode)" "$(state_get seed)" "$(state_get hints_used)"
-  printf '%s\t%s\t%s\t%s\t%ss\thints=%s\n' \
-    "$(date -u +%FT%TZ)" "$type" "$(state_get mode)" "$result" "$elapsed" "$(state_get hints_used)" \
-    >> "$LAB_ROOT/results.log"
+  log_attempt "$result"
+  echo "Recent attempts: $LAB_CMD history"
+}
+
+# Show the last 10 solved scenarios, most recent first.
+cmd_history() {
+  local log="$LAB_ROOT/results.log"
+  if [[ ! -s "$log" ]]; then
+    echo "No attempts recorded yet. Solve one, then run: $LAB_CMD check"
+    return 0
+  fi
+  echo "Last 10 attempts (most recent first):"
+  echo
+  printf '  %-16s  %-9s  %-8s  %-6s  %6s  %-12s  %s\n' WHEN TYPE MODE RESULT TIME SEED HINTS
+  printf '  %-16s  %-9s  %-8s  %-6s  %6s  %-12s  %s\n' ---------------- --------- -------- ------ ------ ------------ -----
+  # Keep only complete (7-field) records, then print the last 10 newest-first.
+  awk -F'\t' 'NF>=7{a[++n]=$0} END{for(i=n;i>=1 && i>n-10;i--) print a[i]}' "$log" | \
+  while IFS=$'\t' read -r ts type mode result elapsed seed hints; do
+    when="${ts/T/ }"; when="${when%:*}"              # 2026-10-05 13:45
+    mmss="$(printf '%d:%02d' $((elapsed/60)) $((elapsed%60)))"
+    case "$result" in
+      pass)  r=PASS ;;
+      pass*) r="PASS*" ;;                            # passed, but missed a quiz question
+      fail)  r=FAIL ;;                               # gave up / checked while still broken
+      *)     r="$result" ;;
+    esac
+    printf '  %-16s  %-9s  %-8s  %-6s  %6s  %-12s  %s\n' "$when" "$type" "$mode" "$r" "$mmss" "$seed" "$hints"
+  done
+  echo
+  echo "  Replay any of these exactly:  $LAB_CMD start <type> --seed <seed>"
+  echo "  (PASS* = solved but missed a diagnosis question.  FAIL = checked while still broken.)"
 }
 
 # Apply the reference fix. Spoiler; used by CI to prove each scenario is fixable.
@@ -257,6 +302,7 @@ main() {
     ticket)  cmd_ticket ;;
     hint)    cmd_hint ;;
     runbook) cmd_runbook ;;
+    history) cmd_history ;;
     reset)   cmd_reset; rm -rf "$LAB_STATE" ;;
     down)    compose --profile tools down -v --remove-orphans; rm -rf "$LAB_STATE" ;;
     wp)      wp "$@" ;;
