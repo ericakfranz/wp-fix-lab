@@ -10,11 +10,22 @@ set -euo pipefail
 # shellcheck source=lib/common.sh
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/common.sh"
 
+# Echo instructions back in the same form the user launched us with: "./lab" when
+# run directly, "bash lab" when run through bash (common from a downloaded ZIP,
+# where the file isn't marked executable).
+case "$0" in
+  /*|./*|../*) LAB_CMD="$0" ;;
+  *)           LAB_CMD="bash $0" ;;
+esac
+# Rewrite the literal "./lab" in scenario text (tickets, hints, quizzes, runbooks)
+# to whatever form the user is actually using.
+lab_say() { sed "s#\./lab#${LAB_CMD}#g"; }
+
 usage() {
   cat <<EOF
 WP Fix Lab
 
-Usage: ./lab <command>
+Usage: $LAB_CMD <command>
 
   list                       Show the error types you can be tested on
   start <type> [options]     Reset the site, break it, show the ticket
@@ -33,7 +44,7 @@ Training-mode extras (not available with --test):
   runbook                    Show the write-up for the current type.
 
 Tools while you work:
-  wp <args>                  Run WP-CLI (e.g. ./lab wp plugin list)
+  wp <args>                  Run WP-CLI (e.g. $LAB_CMD wp plugin list)
   shell                      Open a shell in the PHP container
   logs [service]             Container logs (wordpress, nginx, db)
 
@@ -45,12 +56,12 @@ EOF
 state_get() { cat "$LAB_STATE/$1" 2>/dev/null || true; }
 current_type() {
   local t; t="$(state_get type)"
-  [[ -n "$t" ]] || die "No scenario running. Try: ./lab list"
+  [[ -n "$t" ]] || die "No scenario running. Try: $LAB_CMD list"
   echo "$t"
 }
 type_file() {
   local f="$LAB_ROOT/scenarios/$1/scenario.sh"
-  [[ -f "$f" ]] || die "Unknown type '$1'. Try: ./lab list"
+  [[ -f "$f" ]] || die "Unknown type '$1'. Try: $LAB_CMD list"
   echo "$f"
 }
 
@@ -84,7 +95,7 @@ cmd_reset() {
   for i in $(seq 1 60); do
     in_php 'test -f /var/www/html/wp-config.php' 2>/dev/null && break
     sleep 1
-    [[ $i -eq 60 ]] && die "WordPress files never appeared. Check: ./lab logs wordpress"
+    [[ $i -eq 60 ]] && die "WordPress files never appeared. Check: $LAB_CMD logs wordpress"
   done
 
   wp core install --url="$LAB_URL" --title="WP Fix Lab" \
@@ -93,7 +104,7 @@ cmd_reset() {
   wp rewrite structure '/%postname%/' >/dev/null
   wp post generate --count=8 >/dev/null 2>&1 || true
 
-  [[ "$(http_code /)" == 200 ]] || die "Clean site isn't returning 200. Check: ./lab logs"
+  [[ "$(http_code /)" == 200 ]] || die "Clean site isn't returning 200. Check: $LAB_CMD logs"
 }
 
 cmd_start() {
@@ -108,7 +119,7 @@ cmd_start() {
     esac
     shift
   done
-  [[ -n "$type" ]] || die "Usage: ./lab start <type> [--test] [--seed <n>]"
+  [[ -n "$type" ]] || die "Usage: $LAB_CMD start <type> [--test] [--seed <n>]"
   [[ -z "$seed" || "$seed" =~ ^[0-9]+$ ]] || die "--seed takes a number."
   [[ -z "$seed" ]] && seed="$RANDOM$RANDOM"
 
@@ -134,10 +145,10 @@ cmd_start() {
   else
     printf '=== TRAINING MODE ===  type: %s   seed: %s\n\n' "$type" "$seed"
   fi
-  ticket
+  ticket | lab_say
   echo
-  echo "When you think it's fixed:  ./lab check"
-  if is_training; then echo "Stuck?  ./lab hint"; fi
+  echo "When you think it's fixed:  $LAB_CMD check"
+  if is_training; then echo "Stuck?  $LAB_CMD hint"; fi
   return 0
 }
 
@@ -149,18 +160,18 @@ restore_run() {
   load_type "$type"
 }
 
-cmd_ticket() { restore_run; ticket | sed 's/^/  /'; }
+cmd_ticket() { restore_run; ticket | lab_say | sed 's/^/  /'; }
 
 cmd_hint() {
   restore_run
-  is_training || die "Hints are off in test mode. Grade with: ./lab check"
+  is_training || die "Hints are off in test mode. Grade with: $LAB_CMD check"
   local used total
   used="$(state_get hints_used)"; total="$(hint_count)"
   if (( used >= total )); then
-    echo "No more hints - you've seen all $total. The full write-up: ./lab runbook"
+    echo "No more hints - you've seen all $total. The full write-up: $LAB_CMD runbook"
     return 0
   fi
-  hint "$(( used + 1 ))"
+  hint "$(( used + 1 ))" | lab_say
   echo "$(( used + 1 ))" > "$LAB_STATE/hints_used"
   echo
   printf '(hint %d of %d)\n' "$(( used + 1 ))" "$total"
@@ -169,7 +180,7 @@ cmd_hint() {
 cmd_runbook() {
   restore_run
   is_training || die "Runbooks are off in test mode."
-  cat "$LAB_ROOT/scenarios/$(current_type)/RUNBOOK.md"
+  cat "$LAB_ROOT/scenarios/$(current_type)/RUNBOOK.md" | lab_say
 }
 
 run_quiz() {
@@ -187,7 +198,7 @@ run_quiz() {
       reply="$(printf '%s' "$reply" | tr '[:lower:]' '[:upper:]')"
       if [[ "$reply" == "$answer" ]]; then pass "correct"; else fail "not quite (answer: $answer)"; wrong=1; fi
     fi
-  done < <(quiz)
+  done < <(quiz | lab_say)
   return "$wrong"
 }
 
@@ -201,7 +212,7 @@ cmd_check() {
   echo
   if [[ "$CHECK_FAILED" -ne 0 ]]; then
     printf '\033[31mFAIL\033[0m - not fixed yet.\n'
-    if is_training; then echo "Keep going. A nudge: ./lab hint"; fi
+    if is_training; then echo "Keep going. A nudge: $LAB_CMD hint"; fi
     return 1
   fi
   printf '\033[32mPASS\033[0m - the site is healthy again.\n'
@@ -209,7 +220,7 @@ cmd_check() {
   local result="pass"
   if is_training && [[ -z "${LAB_NONINTERACTIVE:-}" ]]; then
     run_quiz || result="pass (diagnosis incomplete)"
-    echo; echo "Full write-up for this type: ./lab runbook"
+    echo; echo "Full write-up for this type: $LAB_CMD runbook"
   fi
 
   local started elapsed; started="$(state_get started_at)"; elapsed=$(( $(date +%s) - started ))
