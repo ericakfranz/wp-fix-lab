@@ -4,8 +4,6 @@ A hands-on troubleshooting lab for WordPress support and operations roles. It bo
 real WordPress stack, mimicks the way production sites break, hands you a
 support ticket, and grades whether you fixed it with a clear **PASS / FAIL**.
 
-[![Scenarios](https://github.com/ericakfranz/wp-fix-lab/actions/workflows/scenarios.yml/badge.svg)](https://github.com/ericakfranz/wp-fix-lab/actions/workflows/scenarios.yml)
-
 ## How it works
 
 Each error **type** has several different root causes, and a seed decides which one you get. The problem's identity is randomised every run. Read the logs, find the specific thing that's broken, and act on that.
@@ -131,11 +129,11 @@ That stops the local WordPress site through Docker. Your progress and files are 
 ## Two modes
 
 ```bash
-./lab start database             # TRAINING: ticket, ./lab hint, and after a PASS,
-                                 # diagnosis questions + ./lab runbook
-./lab start database --test      # TEST: ticket + PASS/FAIL only. No hints, no runbook,
+bash lab start database             # TRAINING: ticket, bash lab hint, and after a PASS,
+                                 # diagnosis questions + bash lab runbook
+bash lab start database --test      # TEST: ticket + PASS/FAIL only. No hints, no runbook,
                                  # no answers. For proving the skill, not teaching it.
-./lab start database --seed 42   # reproduce an exact scenario (same seed = same problem)
+bash lab start database --seed 42   # reproduce an exact scenario (same seed = same problem)
 ```
 
 - **Training mode** is for learning: `bash lab hint` gives one more nudge each time, and a
