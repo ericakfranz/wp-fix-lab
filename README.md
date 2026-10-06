@@ -4,6 +4,8 @@ A hands-on troubleshooting lab for WordPress support and operations roles. It bo
 real WordPress stack, mimicks the way production sites break, hands you a
 support ticket, and grades whether you fixed it with a clear **PASS / FAIL**.
 
+🌿 [All Commands](#commands)
+
 ## How it works
 
 Each error **type** has several different root causes, and a seed decides which one you get. The problem's identity is randomised every run. Read the logs, find the specific thing that's broken, and act on that.
@@ -182,7 +184,41 @@ bash lab exam status       # progress and time left
 bash lab exam stop         # cancel
 ```
 
-Exam mode runs a random, non-repeating sequence in test mode. Each time you `check` a scenario and pass, it loads the next one. With `--minutes`, the clock is evaluated on every `check`; if it's run out, the exam ends with a failure and tells you to try again. With no limit (the default), it reports your total time when you clear them all. 
+Exam mode runs a random, non-repeating sequence in test mode. Each time you `check` a scenario and pass, it loads the next one. With `--minutes`, the clock is evaluated on every `check`; if it's run out, the exam ends with a failure and tells you to try again. With no limit (the default), it reports your total time when you clear them all.
+
+## Commands
+
+Here are all the lab commands (this is also what `bash lab help` prints):
+
+**Running scenarios**
+- `bash lab list` — show the error types you can practice
+- `bash lab start <type>` — build a clean site, break it, show the ticket (types: database, fatal, 429)
+- `bash lab start <type> --test` — test mode: ticket + PASS/FAIL only, no hints/runbook
+- `bash lab start <type> --seed <n>` — replay an exact scenario
+- `bash lab check` — grade your fix (PASS / FAIL)
+- `bash lab ticket` — show the current ticket again
+
+**Help while you work (training mode only)**
+- `bash lab hint` — one more clue each time you ask
+- `bash lab runbook` — full write-up for the current type
+
+**Tools for investigating**
+- `bash lab wp <args>` — run WP-CLI (e.g. bash lab wp plugin list)
+- `bash lab shell` — open a shell inside the site's files
+- `bash lab logs [service]` — container logs (wordpress, nginx, db)
+
+**Exam / gauntlet**
+- `bash lab exam [n]` — n random scenarios back-to-back, test mode, timed
+- `bash lab exam [n] --minutes M` — fail the run if the clock runs out
+- `bash lab exam status` — progress and time left
+- `bash lab exam stop` — cancel
+
+**Progress & housekeeping
+**
+- `bash lab history` — your last 10 attempts (time + seed)
+- `bash lab reset` — rebuild a clean, working site
+- `bash lab down` — stop everything and clear the lab's data
+- `bash lab help` — this list
 
 ## Adding a variant or a type
 
