@@ -213,8 +213,7 @@ Here are all the lab commands (this is also what `bash lab help` prints):
 - `bash lab exam status` — progress and time left
 - `bash lab exam stop` — cancel
 
-**Progress & housekeeping
-**
+**Progress & housekeeping**
 - `bash lab history` — your last 10 attempts (time + seed)
 - `bash lab reset` — rebuild a clean, working site
 - `bash lab down` — stop everything and clear the lab's data
