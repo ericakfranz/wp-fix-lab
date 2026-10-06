@@ -149,7 +149,7 @@ bash lab start database --seed 42   # reproduce an exact scenario (same seed = s
 1. `bash lab start <type> [--test] [--seed N]` builds a clean site, breaks it, shows the
    ticket and starts the clock.
 2. Investigate like it's a real server: browser + dev tools, `bash lab logs`, `bash lab wp …`
-   (WP-CLI), `bash lab shell`.
+   ([WP-CLI](https://developer.wordpress.org/cli/commands/)), `bash lab shell`.
 3. `bash lab check` grades by how the site behaves → **PASS / FAIL**. Results append to
    `results.log`.
 
@@ -203,7 +203,7 @@ Here are all the lab commands (this is also what `bash lab help` prints):
 - `bash lab runbook` — full write-up for the current type
 
 **Tools for investigating**
-- `bash lab wp <args>` — run WP-CLI (e.g. bash lab wp plugin list)
+- `bash lab wp <args>` — run [WP-CLI](https://developer.wordpress.org/cli/commands/) (e.g. [bash lab wp plugin list])
 - `bash lab shell` — open a shell inside the site's files
 - `bash lab logs [service]` — container logs (wordpress, nginx, db)
 
